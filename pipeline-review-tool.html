@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pipeline Review Tool</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg: #0f1117;
+    --surface: #171b26;
+    --surface2: #1e2333;
+    --surface3: #252b3d;
+    --border: #2a3050;
+    --border2: #3a4060;
+    --accent: #4f8ef7;
+    --accent2: #3a6fd4;
+    --warn: #f59e0b;
+    --danger: #ef4444;
+    --success: #22c55e;
+    --muted: #6b7494;
+    --text: #e2e8f8;
+    --text2: #a0aacb;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--sans); background: var(--bg); color: var(--text); font-size: 14px; min-height: 100vh; }
+  #app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+  /* HEADER */
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; flex-wrap: wrap; }
+  header h1 { font-size: 12px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text2); font-family: var(--mono); }
+  .hpill { font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 3px; background: var(--surface3); color: var(--muted); border: 1px solid var(--border); white-space: nowrap; }
+  .hpill.warn { background: rgba(245,158,11,0.1); color: var(--warn); border-color: rgba(245,158,11,0.25); }
+  .hpill.info { background: rgba(79,142,247,0.1); color: var(--accent); border-color: rgba(79,142,247,0.25); }
+  .spacer { flex: 1; }
+
+  /* TABS */
+  .tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; padding: 0 20px; gap: 0; }
+  .tab { padding: 9px 16px; font-size: 11px; font-weight: 500; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; letter-spacing: 0.06em; text-transform: uppercase; font-family: var(--mono); transition: color 0.15s; }
+  .tab:hover { color: var(--text2); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* PANELS */
+  .panel { display: none; flex: 1; overflow: hidden; flex-direction: column; }
+  .panel.active { display: flex; }
+
+  /* TOOLBAR */
+  .toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; flex-wrap: wrap; }
+  .toolbar input[type=text], .toolbar select { background: var(--surface3); border: 1px solid var(--border); color: var(--text); font-family: var(--sans); font-size: 12px; padding: 5px 10px; border-radius: 4px; outline: none; height: 30px; }
+  .toolbar input[type=text]:focus, .toolbar select:focus { border-color: var(--accent); }
+  .toolbar input[type=text] { width: 200px; }
+  label.check { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text2); cursor: pointer; white-space: nowrap; }
+  label.check input { accent-color: var(--warn); }
+
+  /* BUTTONS */
+  .btn { font-family: var(--mono); font-size: 11px; font-weight: 500; padding: 5px 13px; border-radius: 4px; border: none; cursor: pointer; letter-spacing: 0.04em; text-transform: uppercase; transition: all 0.15s; white-space: nowrap; height: 30px; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent2); }
+  .btn-secondary { background: var(--surface3); color: var(--text2); border: 1px solid var(--border); }
+  .btn-secondary:hover { color: var(--text); border-color: var(--border2); }
+  .btn-warn { background: rgba(245,158,11,0.12); color: var(--warn); border: 1px solid rgba(245,158,11,0.28); }
+  .btn-warn:hover { background: rgba(245,158,11,0.22); }
+  .btn-success { background: rgba(34,197,94,0.12); color: var(--success); border: 1px solid rgba(34,197,94,0.28); }
+  .btn-success:hover { background: rgba(34,197,94,0.22); }
+  .btn-danger { background: rgba(239,68,68,0.1); color: var(--danger); border: 1px solid rgba(239,68,68,0.22); }
+  .btn-danger:hover { background: rgba(239,68,68,0.2); }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* TABLE */
+  .table-wrap { flex: 1; overflow: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  thead th { position: sticky; top: 0; z-index: 2; background: var(--surface2); color: var(--muted); font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.07em; text-transform: uppercase; padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; cursor: pointer; user-select: none; }
+  thead th:hover { color: var(--text2); }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background 0.08s; }
+  tbody tr:hover { background: var(--surface2); }
+  tbody tr.stale-row { background: rgba(245,158,11,0.03); }
+  tbody tr.stale-row:hover { background: rgba(245,158,11,0.07); }
+  tbody tr.selected-row { background: rgba(79,142,247,0.07); }
+  tbody td { padding: 6px 10px; color: var(--text2); vertical-align: middle; white-space: nowrap; }
+  td.code { font-family: var(--mono); font-size: 11px; color: var(--accent); }
+  td.name-cell { color: var(--text); max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+  td.mono-sm { font-family: var(--mono); font-size: 11px; }
+
+  /* INLINE CONTROLS */
+  .inline-sel { background: var(--surface3); border: 1px solid var(--border); color: var(--text); font-family: var(--sans); font-size: 11px; padding: 2px 6px; border-radius: 3px; outline: none; cursor: pointer; }
+  .inline-sel:focus { border-color: var(--accent); }
+  .inline-input { background: transparent; border: none; border-bottom: 1px solid var(--border2); color: var(--text2); font-family: var(--sans); font-size: 11px; padding: 2px 4px; outline: none; width: 170px; }
+  .inline-input:focus { border-bottom-color: var(--accent); color: var(--text); }
+
+  /* TAGS */
+  .tag { display: inline-block; font-family: var(--mono); font-size: 10px; padding: 1px 7px; border-radius: 3px; white-space: nowrap; }
+  .tag-active   { background: rgba(34,197,94,0.1);  color: var(--success); border: 1px solid rgba(34,197,94,0.22); }
+  .tag-inactive { background: rgba(239,68,68,0.08); color: var(--danger);  border: 1px solid rgba(239,68,68,0.2); }
+  .tag-review   { background: rgba(245,158,11,0.1); color: var(--warn);    border: 1px solid rgba(245,158,11,0.25); }
+  .tag-unset    { background: var(--surface3);       color: var(--muted);   border: 1px solid var(--border); }
+  .stale-tag    { background: rgba(245,158,11,0.12); color: var(--warn);    border: 1px solid rgba(245,158,11,0.3); font-family: var(--mono); font-size: 10px; padding: 1px 6px; border-radius: 3px; }
+
+  /* EMPTY STATE */
+  .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; color: var(--muted); font-size: 13px; gap: 12px; padding: 40px; text-align: center; }
+  .empty-icon { font-size: 36px; opacity: 0.4; }
+
+  /* EXPORT PANEL */
+  .scroll-panel { flex: 1; overflow: auto; padding: 24px; display: flex; flex-direction: column; gap: 20px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .card-hdr { padding: 11px 16px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 11px; font-weight: 500; color: var(--text2); letter-spacing: 0.07em; text-transform: uppercase; display: flex; align-items: center; gap: 10px; }
+  .card-body { padding: 16px; }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .stat-box { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; }
+  .stat-box .val { font-family: var(--mono); font-size: 26px; color: var(--text); }
+  .stat-box .lbl { font-size: 11px; color: var(--muted); margin-top: 3px; text-transform: uppercase; letter-spacing: 0.06em; font-family: var(--mono); }
+  .stat-box.warn .val { color: var(--warn); }
+  .stat-box.info .val { color: var(--accent); }
+  .stat-box.ok   .val { color: var(--success); }
+
+  .pa-steps { display: flex; flex-direction: column; gap: 10px; }
+  .pa-step { display: flex; gap: 12px; }
+  .pa-num { font-family: var(--mono); font-size: 10px; color: var(--accent); background: rgba(79,142,247,0.08); border: 1px solid rgba(79,142,247,0.18); border-radius: 3px; padding: 2px 7px; flex-shrink: 0; align-self: flex-start; margin-top: 2px; }
+  .pa-text { font-size: 12px; color: var(--text2); line-height: 1.65; }
+  .pa-text code { font-family: var(--mono); font-size: 11px; background: var(--surface3); padding: 1px 5px; border-radius: 3px; color: var(--accent); }
+
+  /* MODAL */
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.65); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .modal { background: var(--surface); border: 1px solid var(--border2); border-radius: 8px; padding: 22px; width: 480px; max-width: 95vw; max-height: 85vh; overflow-y: auto; }
+  .modal h2 { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text); margin-bottom: 16px; }
+  .mrow { display: flex; flex-direction: column; gap: 4px; margin-bottom: 13px; }
+  .mrow label { font-size: 10px; color: var(--muted); font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.06em; }
+  .mrow input, .mrow select, .mrow textarea { background: var(--surface3); border: 1px solid var(--border); color: var(--text); font-family: var(--sans); font-size: 12px; padding: 6px 10px; border-radius: 4px; outline: none; width: 100%; }
+  .mrow input:focus, .mrow select:focus, .mrow textarea:focus { border-color: var(--accent); }
+  .mrow textarea { resize: vertical; min-height: 56px; }
+  .mrow .readonly { color: var(--muted); background: var(--surface2); cursor: default; }
+  .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+  .mdivider { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+
+  /* IMPORT OVERLAY */
+  .import-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .import-box { background: var(--surface); border: 2px dashed var(--border2); border-radius: 10px; padding: 50px 70px; text-align: center; max-width: 480px; width: 100%; transition: border-color 0.2s, background 0.2s; }
+  .import-box.drag { border-color: var(--accent); background: rgba(79,142,247,0.04); }
+  .import-box h2 { font-size: 16px; font-weight: 500; margin-bottom: 8px; }
+  .import-box p { font-size: 12px; color: var(--muted); margin-bottom: 20px; line-height: 1.6; }
+  .import-note { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 14px; }
+
+  /* CHECKBOX */
+  td.cb, th.cb { width: 34px; padding: 6px 6px 6px 14px; }
+  td.cb input, th.cb input { accent-color: var(--accent); cursor: pointer; }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+  /* TOAST */
+  #toast { position: fixed; bottom: 20px; right: 20px; background: var(--surface2); border: 1px solid var(--border2); border-radius: 5px; padding: 9px 16px; font-size: 12px; font-family: var(--mono); color: var(--text); opacity: 0; transition: opacity 0.25s; pointer-events: none; z-index: 300; }
+  #toast.show { opacity: 1; }
+
+  .sep { width: 1px; height: 20px; background: var(--border); flex-shrink: 0; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- HEADER -->
+  <header>
+    <h1>Pipeline Review</h1>
+    <span class="hpill info" id="hdr-total">0 opps</span>
+    <span class="hpill warn" id="hdr-stale">0 past close date</span>
+    <span class="hpill" id="hdr-reviewed">0 reviewed</span>
+    <div class="spacer"></div>
+    <button class="btn btn-secondary" onclick="showImport()">↑ Import</button>
+    <button class="btn btn-success" id="btn-export-hdr" onclick="doExport()" disabled>↓ Export for PA</button>
+  </header>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('triage')">Triage <span style="font-size:10px;margin-left:4px;opacity:0.6;" id="triage-count"></span></div>
+    <div class="tab" onclick="switchTab('export')">Export &amp; PA Setup</div>
+  </div>
+
+  <!-- TRIAGE PANEL -->
+  <div class="panel active" id="panel-triage">
+    <div class="toolbar">
+      <input type="text" id="search" placeholder="Search name, code, account…" oninput="renderTable()">
+      <select id="f-stage" onchange="renderTable()"><option value="">All stages</option></select>
+      <select id="f-owner" onchange="renderTable()"><option value="">All owners</option></select>
+      <select id="f-org" onchange="renderTable()"><option value="">All orgs</option></select>
+      <select id="f-status" onchange="renderTable()">
+        <option value="">All reviews</option>
+        <option value="active">Active</option>
+        <option value="inactive">Inactive</option>
+        <option value="review">Needs review</option>
+        <option value="unset">Not reviewed</option>
+      </select>
+      <label class="check"><input type="checkbox" id="f-stale" onchange="renderTable()"> Past close date only</label>
+      <div class="spacer"></div>
+      <button class="btn btn-warn" onclick="bulkOpen()">Bulk assign</button>
+      <button class="btn btn-secondary" onclick="clearFilters()">Clear</button>
+    </div>
+    <div class="table-wrap" id="table-wrap">
+      <table id="main-table">
+        <thead>
+          <tr>
+            <th class="cb"><input type="checkbox" id="sel-all" onchange="toggleAll(this)"></th>
+            <th onclick="sortBy('Opportunity Code')">Code ↕</th>
+            <th onclick="sortBy('Name')">Name ↕</th>
+            <th onclick="sortBy('Account')">Account ↕</th>
+            <th onclick="sortBy('Primary Project Owning Organization')">Org ↕</th>
+            <th onclick="sortBy('Sales Stage')">Stage ↕</th>
+            <th onclick="sortBy('Est. Net Contract Value')">Net CV ↕</th>
+            <th onclick="sortBy('Go-Get Probability(%)')">Prob% ↕</th>
+            <th onclick="sortBy('Close (Decision) Date')">Close Date ↕</th>
+            <th onclick="sortBy('Estimated Project Start Date')">Est Start ↕</th>
+            <th onclick="sortBy('Estimated Project Completion Date')">Est End ↕</th>
+            <th onclick="sortBy('E-Mail')">Owner Email ↕</th>
+            <th>Stale</th>
+            <th>Review Status</th>
+            <th>Notes</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div id="empty-state" class="empty-state" style="display:none">
+      <div class="empty-icon">📂</div>
+      <div>No data loaded. Import your Power BI Excel export to begin.</div>
+      <button class="btn btn-primary" onclick="showImport()">Import Excel</button>
+    </div>
+  </div>
+
+  <!-- EXPORT PANEL -->
+  <div class="panel" id="panel-export">
+    <div class="scroll-panel">
+      <div class="stat-grid">
+        <div class="stat-box"><div class="val" id="s-total">0</div><div class="lbl">Total opportunities</div></div>
+        <div class="stat-box warn"><div class="val" id="s-stale">0</div><div class="lbl">Past close date</div></div>
+        <div class="stat-box"><div class="val" id="s-reviewed">0</div><div class="lbl">Reviewed</div></div>
+        <div class="stat-box info"><div class="val" id="s-owners">0</div><div class="lbl">Distinct owners</div></div>
+        <div class="stat-box ok"><div class="val" id="s-active">0</div><div class="lbl">Marked active</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-hdr">Export options</div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:14px;">
+          <div style="display:flex;gap:16px;flex-wrap:wrap;">
+            <label class="check" style="font-size:13px;"><input type="checkbox" id="exp-all" checked> All opportunities</label>
+            <label class="check" style="font-size:13px;"><input type="checkbox" id="exp-stale"> Include stale flag column</label>
+            <label class="check" style="font-size:13px;"><input type="checkbox" id="exp-reviewed-only"> Reviewed only</label>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <button class="btn btn-success" onclick="doExport()" style="font-size:12px;height:34px;">↓ Download Excel for Power Automate</button>
+            <button class="btn btn-secondary" onclick="saveState()" style="font-size:12px;height:34px;">💾 Save working state (JSON)</button>
+          </div>
+          <p style="font-size:11px;color:var(--muted);font-family:var(--mono);line-height:1.6;">
+            Output columns: Opportunity Code · Name · Account · Org · Sales Stage · Net Contract Value · Probability · Close Date · Est Start · Est End · Owner Email · Stale Flag · Review Status · Reviewer Notes.<br>
+            Power Automate reads this file, groups rows by Owner Email, sends each owner an HTML table of their opportunities + a link to their response form.
+          </p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-hdr">Power Automate setup guide</div>
+        <div class="card-body">
+          <div class="pa-steps">
+            <div class="pa-step"><div class="pa-num">01</div><div class="pa-text">Upload the exported Excel to a <code>SharePoint document library</code>, e.g. <code>Pipeline Reviews / 2025-Q2.xlsx</code>. Format the data as a Table (Insert → Table in Excel) before uploading so PA can use <code>List rows present in a table</code>.</div></div>
+            <div class="pa-step"><div class="pa-num">02</div><div class="pa-text">Create a Power Automate flow. Trigger: <code>Manually trigger a flow</code> (or schedule). Action: <code>List rows present in a table</code> using the Excel / SharePoint connector pointing to your uploaded file.</div></div>
+            <div class="pa-step"><div class="pa-num">03</div><div class="pa-text">Add a <code>Select</code> action to extract unique emails from the rows. Then <code>Apply to each</code> unique email — filter the full row list to only that owner's rows using <code>Filter array</code> where <code>Owner Email</code> equals the current email.</div></div>
+            <div class="pa-step"><div class="pa-num">04</div><div class="pa-text">Build an HTML table string for each owner. Use a <code>Create HTML table</code> action or compose the HTML manually with the columns: Name, Account, Net CV, Probability, Close Date, Est Start, Est End, Stale Flag. Stale rows can be highlighted with inline <code>style="background:#fff3cd"</code>.</div></div>
+            <div class="pa-step"><div class="pa-num">05</div><div class="pa-text">Send via <code>Send an email (V2)</code>. To: current email. Subject: <code>Pipeline review request — [count] opportunities assigned to you</code>. Body: HTML table + a button/link to a <code>Microsoft Form</code> or <code>Power Apps</code> form. The form should capture: Opportunity Code, Is Active (Yes/No/Uncertain), Revised Close Date, Revised Start Date, Revised End Date, Notes.</div></div>
+            <div class="pa-step"><div class="pa-num">06</div><div class="pa-text">Form responses write to a <code>SharePoint list</code>. When you re-import here next cycle, responses can be loaded via the JSON state restore to carry forward any manual updates you applied.</div></div>
+            <div class="pa-step"><div class="pa-num">07</div><div class="pa-text">On re-import: export fresh data from Power BI, import here. The tool merges on <code>Opportunity Code</code> — your review statuses, notes, and any manual email overrides are preserved. New opportunities are appended automatically.</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- IMPORT OVERLAY -->
+<div class="import-overlay" id="import-overlay" style="display:none">
+  <div class="import-box" id="drop-zone"
+    ondragover="event.preventDefault();this.classList.add('drag')"
+    ondragleave="this.classList.remove('drag')"
+    ondrop="handleDrop(event)">
+    <h2>Import Excel export</h2>
+    <p>Drag your Power BI Excel export here, or click to browse.<br>
+    Columns should be in row 1 as headers.<br>
+    Re-import preserves all your notes and review statuses.</p>
+    <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+      <button class="btn btn-primary" onclick="document.getElementById('file-in').click()">Choose Excel file</button>
+      <button class="btn btn-secondary" onclick="restoreState()">Restore JSON state</button>
+    </div>
+    <input type="file" id="file-in" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleFile(this.files[0])">
+    <input type="file" id="json-in" accept=".json" style="display:none" onchange="handleJSON(this.files[0])">
+    <div class="import-note" id="import-note"></div>
+    <div style="margin-top:18px;">
+      <button class="btn btn-secondary" onclick="document.getElementById('import-overlay').style.display='none'" style="font-size:11px;">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT MODAL -->
+<div class="modal-bg" id="modal-edit" style="display:none">
+  <div class="modal">
+    <h2>Edit opportunity</h2>
+    <div id="modal-edit-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-edit')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- BULK MODAL -->
+<div class="modal-bg" id="modal-bulk" style="display:none">
+  <div class="modal">
+    <h2>Bulk assign — <span id="bulk-count">0</span> selected</h2>
+    <div class="mrow">
+      <label>Override owner email (leave blank to keep existing)</label>
+      <input type="email" id="bulk-email" placeholder="owner@company.com">
+    </div>
+    <div class="mrow">
+      <label>Set review status</label>
+      <select id="bulk-status">
+        <option value="">— keep existing —</option>
+        <option value="active">Active</option>
+        <option value="inactive">Inactive</option>
+        <option value="review">Needs review</option>
+      </select>
+    </div>
+    <div class="mrow">
+      <label>Append note (added to existing notes)</label>
+      <textarea id="bulk-note" placeholder="Optional note…"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-bulk')">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmBulk()">Apply</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── STATE ──────────────────────────────────────────────────────────────────
+let rows = [];
+let sortCol = '';
+let sortDir = 1;
+let selected = new Set();
+const TODAY = (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })();
+
+const LOCAL = ['_status','_email_override','_notes'];
+
+const COL = {
+  code:    'Opportunity Code',
+  name:    'Name',
+  fav:     'Favorite',
+  status:  'Status',
+  org:     'Primary Project Owning Organization',
+  type:    'Opportunity Type',
+  stage:   'Sales Stage',
+  account: 'Account',
+  endAcct: 'End Account',
+  curr:    'Opportunity Currency',
+  closeDate: 'Close (Decision) Date',
+  feeType: 'Fee Type',
+  createdBy: 'Created By Email',
+  netCV:   'Est. Net Contract Value',
+  totalCV: 'Est. Total Contract Value (BU Currency)',
+  weightedCV: 'Est. Weighted Net Contract Value',
+  estEnd:  'Estimated Project Completion Date',
+  estStart:'Estimated Project Start Date',
+  prob:    'Go-Get Probability(%)',
+  email:   'E-Mail',
+};
+
+// ── IMPORT ─────────────────────────────────────────────────────────────────
+function showImport() {
+  const n = document.getElementById('import-note');
+  n.textContent = rows.length ? `${rows.length} records loaded — re-import merges on Opportunity Code, preserving your edits.` : '';
+  document.getElementById('import-overlay').style.display = 'flex';
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if (f) handleFile(f);
+}
+
+function handleFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(ws, { raw: false, dateNF: 'yyyy-mm-dd' });
+      mergeRows(raw);
+      document.getElementById('import-overlay').style.display = 'none';
+      toast(`Imported ${raw.length} rows`);
+    } catch(err) { toast('Error: ' + err.message); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function mergeRows(incoming) {
+  const prev = {};
+  rows.forEach(r => prev[r[COL.code]] = r);
+  rows = incoming.map(r => {
+    const code = r[COL.code] || '';
+    const p = prev[code] || {};
+    return { ...r, [COL.code]: code, _status: p._status || '', _email_override: p._email_override || '', _notes: p._notes || '' };
+  });
+  refreshAll();
+}
+
+// ── STALE ──────────────────────────────────────────────────────────────────
+function isStale(r) {
+  const v = r[COL.closeDate];
+  if (!v) return false;
+  const d = new Date(v); d.setHours(0,0,0,0);
+  const stage = (r[COL.stage] || '').toLowerCase();
+  if (['won','lost','closed','cancelled','inactive'].some(s => stage.includes(s))) return false;
+  return d < TODAY;
+}
+
+function fmtDate(v) {
+  if (!v) return '';
+  const d = new Date(v);
+  if (isNaN(d)) return v;
+  return d.toLocaleDateString('en-CA');
+}
+
+function fmtMoney(v) {
+  if (!v && v !== 0) return '';
+  const n = parseFloat(String(v).replace(/[,$\s]/g, ''));
+  if (isNaN(n)) return v;
+  if (Math.abs(n) >= 1e6) return '$' + (n / 1e6).toFixed(1) + 'M';
+  if (Math.abs(n) >= 1e3) return '$' + (n / 1e3).toFixed(0) + 'K';
+  return '$' + n.toFixed(0);
+}
+
+function effectiveEmail(r) {
+  return r._email_override || r[COL.email] || '';
+}
+
+// ── RENDER ──────────────────────────────────────────────────────────────────
+function getFiltered() {
+  const q     = (document.getElementById('search')?.value || '').toLowerCase();
+  const fStage = document.getElementById('f-stage')?.value || '';
+  const fOwner = document.getElementById('f-owner')?.value || '';
+  const fOrg   = document.getElementById('f-org')?.value || '';
+  const fSt    = document.getElementById('f-status')?.value || '';
+  const fStale = document.getElementById('f-stale')?.checked;
+
+  return rows.filter(r => {
+    if (q && !['Opportunity Code','Name','Account','E-Mail'].some(k => (r[k]||'').toLowerCase().includes(q))) return false;
+    if (fStage && r[COL.stage] !== fStage) return false;
+    if (fOwner && effectiveEmail(r) !== fOwner) return false;
+    if (fOrg   && r[COL.org] !== fOrg) return false;
+    if (fSt === 'active'   && r._status !== 'active') return false;
+    if (fSt === 'inactive' && r._status !== 'inactive') return false;
+    if (fSt === 'review'   && r._status !== 'review') return false;
+    if (fSt === 'unset'    && r._status) return false;
+    if (fStale && !isStale(r)) return false;
+    return true;
+  });
+}
+
+function renderTable() {
+  let visible = getFiltered();
+  if (sortCol) {
+    visible.sort((a, b) => {
+      let av = a[sortCol] || '', bv = b[sortCol] || '';
+      if ([COL.netCV, COL.prob].includes(sortCol)) {
+        av = parseFloat(String(av).replace(/[,$%]/g,'')) || 0;
+        bv = parseFloat(String(bv).replace(/[,$%]/g,'')) || 0;
+      }
+      return av < bv ? -sortDir : av > bv ? sortDir : 0;
+    });
+  }
+
+  const tbody = document.getElementById('tbody');
+  const empty = document.getElementById('empty-state');
+  const wrap  = document.getElementById('table-wrap');
+
+  if (!rows.length) { wrap.style.display = 'none'; empty.style.display = 'flex'; return; }
+  wrap.style.display = ''; empty.style.display = 'none';
+
+  document.getElementById('triage-count').textContent = visible.length;
+
+  tbody.innerHTML = visible.map(r => {
+    const code   = r[COL.code];
+    const stale  = isStale(r);
+    const sel    = selected.has(code);
+    const st     = r._status;
+    const email  = effectiveEmail(r);
+    const overridden = !!r._email_override && r._email_override !== r[COL.email];
+    const tagCls = st === 'active' ? 'tag-active' : st === 'inactive' ? 'tag-inactive' : st === 'review' ? 'tag-review' : 'tag-unset';
+
+    return `<tr class="${stale ? 'stale-row' : ''} ${sel ? 'selected-row' : ''}" data-code="${x(code)}">
+      <td class="cb"><input type="checkbox" ${sel ? 'checked' : ''} onchange="toggleSel('${x(code)}',this)"></td>
+      <td class="code">${x(code)}</td>
+      <td class="name-cell" title="${x(r[COL.name]||'')}">${x(r[COL.name]||'')}</td>
+      <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;" title="${x(r[COL.account]||'')}">${x(r[COL.account]||'')}</td>
+      <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;font-size:11px;" title="${x(r[COL.org]||'')}">${x(r[COL.org]||'')}</td>
+      <td style="font-size:11px;">${x(r[COL.stage]||'')}</td>
+      <td class="mono-sm" style="text-align:right;">${fmtMoney(r[COL.netCV])}</td>
+      <td class="mono-sm" style="text-align:right;">${r[COL.prob] ? r[COL.prob]+'%' : ''}</td>
+      <td class="mono-sm" style="${stale ? 'color:var(--warn);' : ''}">${fmtDate(r[COL.closeDate])}</td>
+      <td class="mono-sm">${fmtDate(r[COL.estStart])}</td>
+      <td class="mono-sm">${fmtDate(r[COL.estEnd])}</td>
+      <td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;" title="${x(email)}">
+        ${overridden ? `<span style="color:var(--warn);font-size:9px;font-family:var(--mono);">▲ </span>` : ''}${x(email)}
+      </td>
+      <td>${stale ? `<span class="stale-tag">STALE</span>` : ''}</td>
+      <td>
+        <select class="inline-sel" onchange="setSt('${x(code)}',this.value)">
+          <option value="" ${!st?'selected':''}>—</option>
+          <option value="active"   ${st==='active'  ?'selected':''}>Active</option>
+          <option value="inactive" ${st==='inactive'?'selected':''}>Inactive</option>
+          <option value="review"   ${st==='review'  ?'selected':''}>Review</option>
+        </select>
+      </td>
+      <td><input class="inline-input" value="${x(r._notes||'')}" placeholder="note…" onchange="setNote('${x(code)}',this.value)"></td>
+      <td><button class="btn btn-secondary" onclick="openEdit('${x(code)}')" style="font-size:10px;padding:2px 8px;height:24px;">Edit</button></td>
+    </tr>`;
+  }).join('');
+
+  updateCounts();
+}
+
+function x(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+// ── SORTING ──────────────────────────────────────────────────────────────────
+function sortBy(col) { sortCol === col ? sortDir *= -1 : (sortCol = col, sortDir = 1); renderTable(); }
+
+// ── ROW EDITS ─────────────────────────────────────────────────────────────
+function find(code) { return rows.find(r => r[COL.code] === code); }
+function setSt(code, v)   { const r=find(code); if(r) { r._status=v; updateCounts(); } }
+function setNote(code, v) { const r=find(code); if(r) r._notes=v; }
+
+function openEdit(code) {
+  const r = find(code); if (!r) return;
+  const email = effectiveEmail(r);
+  document.getElementById('modal-edit-body').innerHTML = `
+    <div class="mrow"><label>Opportunity Code</label><input class="readonly" value="${x(r[COL.code])}" readonly></div>
+    <div class="mrow"><label>Name</label><input class="readonly" value="${x(r[COL.name]||'')}" readonly></div>
+    <div class="mrow"><label>Account</label><input class="readonly" value="${x(r[COL.account]||'')}" readonly></div>
+    <div class="mrow"><label>Organisation</label><input class="readonly" value="${x(r[COL.org]||'')}" readonly></div>
+    <div class="mrow"><label>Sales Stage</label><input class="readonly" value="${x(r[COL.stage]||'')}" readonly></div>
+    <div class="mrow"><label>Net Contract Value</label><input class="readonly" value="${x(r[COL.netCV]||'')}" readonly></div>
+    <div class="mrow"><label>Go-Get Probability</label><input class="readonly" value="${x(r[COL.prob]||'')}" readonly></div>
+    <div class="mrow"><label>Close (Decision) Date</label><input class="readonly" value="${x(r[COL.closeDate]||'')}" readonly></div>
+    <div class="mrow"><label>Est Project Start</label><input class="readonly" value="${x(r[COL.estStart]||'')}" readonly></div>
+    <div class="mrow"><label>Est Project End</label><input class="readonly" value="${x(r[COL.estEnd]||'')}" readonly></div>
+    <hr class="mdivider">
+    <div class="mrow"><label>Owner email (from source)</label><input class="readonly" value="${x(r[COL.email]||'')}" readonly></div>
+    <div class="mrow">
+      <label>Override owner email <span style="color:var(--muted);font-size:10px;">(optional — leave blank to use source value)</span></label>
+      <input type="email" id="edit-email" value="${x(r._email_override||'')}" placeholder="${x(r[COL.email]||'')}" onchange="setEmailOverride('${x(code)}',this.value)">
+    </div>
+    <div class="mrow">
+      <label>Review status</label>
+      <select id="edit-status" onchange="setSt('${x(code)}',this.value)">
+        <option value="" ${!r._status?'selected':''}>— not reviewed —</option>
+        <option value="active"   ${r._status==='active'  ?'selected':''}>Active</option>
+        <option value="inactive" ${r._status==='inactive'?'selected':''}>Inactive</option>
+        <option value="review"   ${r._status==='review'  ?'selected':''}>Needs review</option>
+      </select>
+    </div>
+    <div class="mrow">
+      <label>Notes</label>
+      <textarea id="edit-notes" onchange="setNote('${x(code)}',this.value)">${x(r._notes||'')}</textarea>
+    </div>
+    ${isStale(r) ? `<div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:5px;padding:10px 12px;font-size:12px;color:var(--warn);margin-bottom:10px;">⚠ This opportunity is past its Close (Decision) Date with no closed status.</div>` : ''}
+  `;
+  document.getElementById('modal-edit').style.display = 'flex';
+}
+
+function setEmailOverride(code, val) {
+  const r = find(code); if(r) r._email_override = val.trim();
+  renderTable();
+}
+
+// ── SELECTION ──────────────────────────────────────────────────────────────
+function toggleSel(code, el) { el.checked ? selected.add(code) : selected.delete(code); updateCounts(); }
+function toggleAll(el) {
+  const vis = getFiltered().map(r => r[COL.code]);
+  el.checked ? vis.forEach(c => selected.add(c)) : vis.forEach(c => selected.delete(c));
+  renderTable();
+}
+
+function bulkOpen() {
+  if (!selected.size) { toast('Select rows first'); return; }
+  document.getElementById('bulk-count').textContent = selected.size;
+  document.getElementById('bulk-email').value = '';
+  document.getElementById('bulk-status').value = '';
+  document.getElementById('bulk-note').value = '';
+  document.getElementById('modal-bulk').style.display = 'flex';
+}
+
+function confirmBulk() {
+  const email = document.getElementById('bulk-email').value.trim();
+  const st    = document.getElementById('bulk-status').value;
+  const note  = document.getElementById('bulk-note').value.trim();
+  selected.forEach(code => {
+    const r = find(code); if(!r) return;
+    if (email) r._email_override = email;
+    if (st)    r._status = st;
+    if (note)  r._notes = r._notes ? r._notes + '; ' + note : note;
+  });
+  selected.clear();
+  closeModal('modal-bulk');
+  renderTable();
+  toast('Bulk update applied');
+}
+
+// ── FILTERS ────────────────────────────────────────────────────────────────
+function populateFilters() {
+  const stages = unique(rows.map(r => r[COL.stage]||''));
+  const owners = unique(rows.map(r => effectiveEmail(r)));
+  const orgs   = unique(rows.map(r => r[COL.org]||''));
+  setOpts('f-stage', stages);
+  setOpts('f-owner', owners);
+  setOpts('f-org', orgs);
+}
+
+function unique(arr) { return [...new Set(arr.filter(Boolean))].sort(); }
+function setOpts(id, vals) {
+  const el = document.getElementById(id); if(!el) return;
+  const cur = el.value;
+  while (el.options.length > 1) el.remove(1);
+  vals.forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; el.appendChild(o); });
+  el.value = cur;
+}
+
+function clearFilters() {
+  document.getElementById('search').value = '';
+  ['f-stage','f-owner','f-org','f-status'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('f-stale').checked = false;
+  renderTable();
+}
+
+// ── COUNTS ─────────────────────────────────────────────────────────────────
+function updateCounts() {
+  const total    = rows.length;
+  const stale    = rows.filter(isStale).length;
+  const reviewed = rows.filter(r => r._status).length;
+  const owners   = new Set(rows.map(r => effectiveEmail(r)).filter(Boolean)).size;
+  const active   = rows.filter(r => r._status === 'active').length;
+
+  document.getElementById('hdr-total').textContent    = `${total} opps`;
+  document.getElementById('hdr-stale').textContent    = `${stale} past close date`;
+  document.getElementById('hdr-reviewed').textContent = `${reviewed} reviewed`;
+  document.getElementById('btn-export-hdr').disabled  = !total;
+
+  const s = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+  s('s-total',total); s('s-stale',stale); s('s-reviewed',reviewed); s('s-owners',owners); s('s-active',active);
+}
+
+function refreshAll() { populateFilters(); renderTable(); updateCounts(); }
+
+// ── EXPORT ─────────────────────────────────────────────────────────────────
+function doExport() {
+  if (!rows.length) { toast('No data'); return; }
+  const reviewedOnly = document.getElementById('exp-reviewed-only')?.checked;
+  const inclStale    = document.getElementById('exp-stale')?.checked ?? true;
+  let src = reviewedOnly ? rows.filter(r => r._status) : rows;
+
+  const out = src.map(r => {
+    const obj = {
+      'Opportunity Code':          r[COL.code]||'',
+      'Name':                      r[COL.name]||'',
+      'Account':                   r[COL.account]||'',
+      'Primary Project Owning Org':r[COL.org]||'',
+      'Sales Stage':               r[COL.stage]||'',
+      'Opportunity Type':          r[COL.type]||'',
+      'Est. Net Contract Value':   r[COL.netCV]||'',
+      'Go-Get Probability (%)':    r[COL.prob]||'',
+      'Close (Decision) Date':     r[COL.closeDate]||'',
+      'Est Project Start Date':    r[COL.estStart]||'',
+      'Est Project Completion Date': r[COL.estEnd]||'',
+      'Owner Email':               effectiveEmail(r),
+    };
+    if (inclStale) obj['Stale Flag'] = isStale(r) ? 'PAST CLOSE DATE' : '';
+    obj['Review Status'] = r._status || '';
+    obj['Reviewer Notes'] = r._notes || '';
+    return obj;
+  });
+
+  const ws = XLSX.utils.json_to_sheet(out);
+  const cols = Object.keys(out[0]||{});
+  ws['!cols'] = cols.map(k => ({ wch: Math.max(k.length, ...out.slice(0,100).map(r => String(r[k]||'').length)) + 2 }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Pipeline Review');
+  XLSX.writeFile(wb, `pipeline-review-${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast(`Exported ${out.length} rows`);
+}
+
+// ── STATE SAVE / RESTORE ────────────────────────────────────────────────────
+function saveState() {
+  const state = {
+    savedAt: new Date().toISOString(),
+    edits: rows.map(r => ({ [COL.code]: r[COL.code], _status: r._status, _email_override: r._email_override, _notes: r._notes }))
+  };
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(state,null,2)], {type:'application/json'}));
+  a.download = `pipeline-state-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  toast('State saved');
+}
+
+function restoreState() { document.getElementById('json-in').click(); }
+
+function handleJSON(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const state = JSON.parse(e.target.result);
+      if (state.edits) {
+        const map = {};
+        state.edits.forEach(ed => map[ed[COL.code]] = ed);
+        rows.forEach(r => {
+          const ed = map[r[COL.code]];
+          if (ed) { r._status = ed._status||''; r._email_override = ed._email_override||''; r._notes = ed._notes||''; }
+        });
+      }
+      refreshAll();
+      document.getElementById('import-overlay').style.display = 'none';
+      toast('State restored');
+    } catch(err) { toast('Error reading JSON: ' + err.message); }
+  };
+  reader.readAsText(file);
+}
+
+// ── TABS / MODALS ──────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['triage','export'][i] === name));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+}
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+// ── TOAST ──────────────────────────────────────────────────────────────────
+let _tt;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(_tt); _tt = setTimeout(() => el.classList.remove('show'), 2400);
+}
+
+// ── INIT ───────────────────────────────────────────────────────────────────
+renderTable();
+updateCounts();
+</script>
+</body>
+</html>
