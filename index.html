@@ -358,6 +358,44 @@ let sortDir = 1;
 let selected = new Set();
 const TODAY = (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })();
 
+// FX rates → CAD. Update these as needed.
+const FX_TO_CAD = {
+  CAD: 1,
+  USD: 1.39,
+  EUR: 1.57,
+  GBP: 1.82,
+  AUD: 0.88,
+  NZD: 0.81,
+  JPY: 0.0094,
+  CHF: 1.57,
+  SGD: 1.04,
+  HKD: 0.18,
+  CNY: 0.19,
+  INR: 0.016,
+  MXN: 0.069,
+  BRL: 0.24,
+};
+
+// Parse a value that may have a leading 3-letter currency code (e.g. "USD 1,234,567")
+// and return the CAD-equivalent number.
+function toCAD(v) {
+  if (v === null || v === undefined || v === '') return NaN;
+  const s = String(v).trim();
+  const m = s.match(/^([A-Z]{3})\s*([\d,.\s]+)/);
+  if (m) {
+    const rate = FX_TO_CAD[m[1]] ?? 1;
+    const num  = parseFloat(m[2].replace(/[,\s]/g, ''));
+    return isNaN(num) ? NaN : num * rate;
+  }
+  return parseFloat(s.replace(/[,$\s]/g, ''));
+}
+
+// Format a raw value (possibly with currency code) as a CAD dollar string.
+function fmtCAD(v) {
+  const n = toCAD(v);
+  return isNaN(n) ? (v ? String(v) : '') : fmtMoney(n);
+}
+
 const LOCAL = ['_status','_email_override','_notes','_closeDate_override','_estStart_override','_estEnd_override'];
 
 const COL = {
@@ -374,7 +412,7 @@ const COL = {
   closeDate: 'Close (Decision) Date',
   feeType: 'Fee Type',
   createdBy: 'Created By Email',
-  grossCV: 'Gross ECV',
+  grossCV: 'Est. Total Contract Value (BU Currency)',
   netCV:   'Est. Net Contract Value',
   totalCV: 'Est. Total Contract Value (BU Currency)',
   weightedCV: 'Est. Weighted Net Contract Value',
@@ -497,7 +535,10 @@ function renderTable() {
   if (sortCol) {
     visible.sort((a, b) => {
       let av = a[sortCol] || '', bv = b[sortCol] || '';
-      if ([COL.netCV, COL.prob].includes(sortCol)) {
+      if ([COL.grossCV, COL.netCV].includes(sortCol)) {
+        av = toCAD(av) || 0;
+        bv = toCAD(bv) || 0;
+      } else if (sortCol === COL.prob) {
         av = parseFloat(String(av).replace(/[,$%]/g,'')) || 0;
         bv = parseFloat(String(bv).replace(/[,$%]/g,'')) || 0;
       }
@@ -515,8 +556,8 @@ function renderTable() {
   document.getElementById('triage-count').textContent = visible.length;
 
   // Update summary bar
-  const grossTotal = visible.reduce((acc, r) => acc + (parseFloat(String(r[COL.grossCV]||'').replace(/[,$\s]/g,'')) || 0), 0);
-  const netTotal   = visible.reduce((acc, r) => acc + (parseFloat(String(r[COL.netCV]||'').replace(/[,$\s]/g,''))   || 0), 0);
+  const grossTotal = visible.reduce((acc, r) => acc + (toCAD(r[COL.grossCV]) || 0), 0);
+  const netTotal   = visible.reduce((acc, r) => acc + (toCAD(r[COL.netCV])   || 0), 0);
   const sb = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   sb('sum-count', visible.length);
   sb('sum-gross', visible.length ? fmtMoney(grossTotal) : '—');
@@ -542,8 +583,8 @@ function renderTable() {
       <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;" title="${x(r[COL.account]||'')}">${x(r[COL.account]||'')}</td>
       <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;font-size:11px;" title="${x(r[COL.org]||'')}">${x(r[COL.org]||'')}</td>
       <td style="font-size:11px;">${x(r[COL.stage]||'')}</td>
-      <td class="mono-sm" style="text-align:right;">${fmtMoney(r[COL.grossCV])}</td>
-      <td class="mono-sm" style="text-align:right;">${fmtMoney(r[COL.netCV])}</td>
+      <td class="mono-sm" style="text-align:right;">${fmtCAD(r[COL.grossCV])}</td>
+      <td class="mono-sm" style="text-align:right;">${fmtCAD(r[COL.netCV])}</td>
       <td class="mono-sm" style="text-align:right;">${r[COL.prob] ? r[COL.prob]+'%' : ''}</td>
       <td class="mono-sm" style="${stale ? 'color:var(--warn);' : ''}">${closeDateOvr ? ovrMark : ''}${fmtDate(effectiveCloseDate(r))}</td>
       <td class="mono-sm">${estStartOvr ? ovrMark : ''}${fmtDate(effectiveEstStart(r))}</td>
