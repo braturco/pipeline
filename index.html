@@ -177,6 +177,7 @@
   <!-- TABS -->
   <div class="tabs">
     <div class="tab active" onclick="switchTab('triage')">Triage <span style="font-size:10px;margin-left:4px;opacity:0.6;" id="triage-count"></span></div>
+    <div class="tab" onclick="switchTab('summary')">Summary</div>
     <div class="tab" onclick="switchTab('export')">Export &amp; PA Setup</div>
   </div>
 
@@ -235,6 +236,25 @@
       <div class="empty-icon">📂</div>
       <div>No data loaded. Import your Power BI Excel export to begin.</div>
       <button class="btn btn-primary" onclick="showImport()">Import Excel</button>
+    </div>
+  </div>
+
+  <!-- SUMMARY PANEL -->
+  <div class="panel" id="panel-summary">
+    <div class="table-wrap">
+      <table id="summary-table">
+        <thead>
+          <tr>
+            <th onclick="sortSummary('email')" style="cursor:pointer;">Owner Email ↕</th>
+            <th onclick="sortSummary('stale')" style="cursor:pointer;text-align:right;">Past Due (Stale) ↕</th>
+          </tr>
+        </thead>
+        <tbody id="summary-tbody"></tbody>
+      </table>
+    </div>
+    <div id="summary-empty" class="empty-state" style="display:none">
+      <div class="empty-icon">📂</div>
+      <div>No data loaded.</div>
     </div>
   </div>
 
@@ -756,6 +776,53 @@ function updateCounts() {
 
 function refreshAll() { populateFilters(); renderTable(); updateCounts(); }
 
+// ── SUMMARY TAB ────────────────────────────────────────────────────────────
+let summarySort = { col: 'stale', dir: -1 };
+
+function sortSummary(col) {
+  summarySort.col === col ? summarySort.dir *= -1 : (summarySort.col = col, summarySort.dir = col === 'stale' ? -1 : 1);
+  renderSummary();
+}
+
+function renderSummary() {
+  const tbody = document.getElementById('summary-tbody');
+  const empty = document.getElementById('summary-empty');
+  const wrap  = tbody?.closest('.table-wrap');
+  if (!tbody) return;
+
+  if (!rows.length) {
+    if (wrap) wrap.style.display = 'none';
+    empty.style.display = 'flex';
+    return;
+  }
+  if (wrap) wrap.style.display = '';
+  empty.style.display = 'none';
+
+  // Build per-email stats
+  const map = {};
+  rows.forEach(r => {
+    const email = effectiveEmail(r) || '(no email)';
+    if (!map[email]) map[email] = { stale: 0 };
+    if (isStale(r)) map[email].stale++;
+  });
+
+  let entries = Object.entries(map).map(([email, s]) => ({ email, stale: s.stale }));
+
+  entries.sort((a, b) => {
+    const av = summarySort.col === 'stale' ? a.stale : a.email.toLowerCase();
+    const bv = summarySort.col === 'stale' ? b.stale : b.email.toLowerCase();
+    return av < bv ? -summarySort.dir : av > bv ? summarySort.dir : 0;
+  });
+
+  tbody.innerHTML = entries.map(e => `
+    <tr>
+      <td style="font-size:12px;">${x(e.email)}</td>
+      <td class="mono-sm" style="text-align:right;">
+        ${e.stale > 0 ? `<span style="color:var(--warn);font-weight:500;">${e.stale}</span>` : `<span style="color:var(--muted);">0</span>`}
+      </td>
+    </tr>`).join('');
+}
+
 // ── EXPORT ─────────────────────────────────────────────────────────────────
 function doExport() {
   if (!rows.length) { toast('No data'); return; }
@@ -848,9 +915,10 @@ function handleJSON(file) {
 
 // ── TABS / MODALS ──────────────────────────────────────────────────────────
 function switchTab(name) {
-  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['triage','export'][i] === name));
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['triage','summary','export'][i] === name));
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('panel-' + name).classList.add('active');
+  if (name === 'summary') renderSummary();
 }
 function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
