@@ -199,6 +199,12 @@
       <button class="btn btn-warn" onclick="bulkOpen()">Bulk assign</button>
       <button class="btn btn-secondary" onclick="clearFilters()">Clear</button>
     </div>
+    <div id="summary-bar" style="display:flex;gap:24px;align-items:center;padding:6px 16px;background:var(--surface2);border-bottom:1px solid var(--border);flex-shrink:0;font-family:var(--mono);font-size:11px;color:var(--muted);">
+      <span><span id="sum-count" style="color:var(--text);font-weight:500;">0</span> rows</span>
+      <span class="sep"></span>
+      <span>Gross ECV <span id="sum-gross" style="color:var(--success);font-weight:500;">—</span></span>
+      <span>Net ECV <span id="sum-net" style="color:var(--accent);font-weight:500;">—</span></span>
+    </div>
     <div class="table-wrap" id="table-wrap">
       <table id="main-table">
         <thead>
@@ -209,6 +215,7 @@
             <th onclick="sortBy('Account')">Account ↕</th>
             <th onclick="sortBy('Primary Project Owning Organization')">Org ↕</th>
             <th onclick="sortBy('Sales Stage')">Stage ↕</th>
+            <th onclick="sortBy('Gross ECV')">Gross ECV ↕</th>
             <th onclick="sortBy('Est. Net Contract Value')">Net CV ↕</th>
             <th onclick="sortBy('Go-Get Probability(%)')">Prob% ↕</th>
             <th onclick="sortBy('Close (Decision) Date')">Close Date ↕</th>
@@ -351,7 +358,7 @@ let sortDir = 1;
 let selected = new Set();
 const TODAY = (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })();
 
-const LOCAL = ['_status','_email_override','_notes'];
+const LOCAL = ['_status','_email_override','_notes','_closeDate_override','_estStart_override','_estEnd_override'];
 
 const COL = {
   code:    'Opportunity Code',
@@ -367,6 +374,7 @@ const COL = {
   closeDate: 'Close (Decision) Date',
   feeType: 'Fee Type',
   createdBy: 'Created By Email',
+  grossCV: 'Gross ECV',
   netCV:   'Est. Net Contract Value',
   totalCV: 'Est. Total Contract Value (BU Currency)',
   weightedCV: 'Est. Weighted Net Contract Value',
@@ -412,14 +420,28 @@ function mergeRows(incoming) {
   rows = incoming.map(r => {
     const code = r[COL.code] || '';
     const p = prev[code] || {};
-    return { ...r, [COL.code]: code, _status: p._status || '', _email_override: p._email_override || '', _notes: p._notes || '' };
+    return {
+      ...r,
+      [COL.code]: code,
+      _status:              p._status              || '',
+      _email_override:      p._email_override      || '',
+      _notes:               p._notes               || '',
+      _closeDate_override:  p._closeDate_override  || '',
+      _estStart_override:   p._estStart_override   || '',
+      _estEnd_override:     p._estEnd_override     || '',
+    };
   });
   refreshAll();
 }
 
+// ── EFFECTIVE VALUES (overrides take precedence) ───────────────────────────
+function effectiveCloseDate(r) { return r._closeDate_override || r[COL.closeDate] || ''; }
+function effectiveEstStart(r)  { return r._estStart_override  || r[COL.estStart]  || ''; }
+function effectiveEstEnd(r)    { return r._estEnd_override    || r[COL.estEnd]    || ''; }
+
 // ── STALE ──────────────────────────────────────────────────────────────────
 function isStale(r) {
-  const v = r[COL.closeDate];
+  const v = effectiveCloseDate(r);
   if (!v) return false;
   const d = new Date(v); d.setHours(0,0,0,0);
   const stage = (r[COL.stage] || '').toLowerCase();
@@ -492,6 +514,14 @@ function renderTable() {
 
   document.getElementById('triage-count').textContent = visible.length;
 
+  // Update summary bar
+  const grossTotal = visible.reduce((acc, r) => acc + (parseFloat(String(r[COL.grossCV]||'').replace(/[,$\s]/g,'')) || 0), 0);
+  const netTotal   = visible.reduce((acc, r) => acc + (parseFloat(String(r[COL.netCV]||'').replace(/[,$\s]/g,''))   || 0), 0);
+  const sb = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  sb('sum-count', visible.length);
+  sb('sum-gross', visible.length ? fmtMoney(grossTotal) : '—');
+  sb('sum-net',   visible.length ? fmtMoney(netTotal)   : '—');
+
   tbody.innerHTML = visible.map(r => {
     const code   = r[COL.code];
     const stale  = isStale(r);
@@ -499,7 +529,11 @@ function renderTable() {
     const st     = r._status;
     const email  = effectiveEmail(r);
     const overridden = !!r._email_override && r._email_override !== r[COL.email];
+    const closeDateOvr = !!r._closeDate_override;
+    const estStartOvr  = !!r._estStart_override;
+    const estEndOvr    = !!r._estEnd_override;
     const tagCls = st === 'active' ? 'tag-active' : st === 'inactive' ? 'tag-inactive' : st === 'review' ? 'tag-review' : 'tag-unset';
+    const ovrMark = `<span style="color:var(--warn);font-size:9px;font-family:var(--mono);">▲ </span>`;
 
     return `<tr class="${stale ? 'stale-row' : ''} ${sel ? 'selected-row' : ''}" data-code="${x(code)}">
       <td class="cb"><input type="checkbox" ${sel ? 'checked' : ''} onchange="toggleSel('${x(code)}',this)"></td>
@@ -508,11 +542,12 @@ function renderTable() {
       <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;" title="${x(r[COL.account]||'')}">${x(r[COL.account]||'')}</td>
       <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;font-size:11px;" title="${x(r[COL.org]||'')}">${x(r[COL.org]||'')}</td>
       <td style="font-size:11px;">${x(r[COL.stage]||'')}</td>
+      <td class="mono-sm" style="text-align:right;">${fmtMoney(r[COL.grossCV])}</td>
       <td class="mono-sm" style="text-align:right;">${fmtMoney(r[COL.netCV])}</td>
       <td class="mono-sm" style="text-align:right;">${r[COL.prob] ? r[COL.prob]+'%' : ''}</td>
-      <td class="mono-sm" style="${stale ? 'color:var(--warn);' : ''}">${fmtDate(r[COL.closeDate])}</td>
-      <td class="mono-sm">${fmtDate(r[COL.estStart])}</td>
-      <td class="mono-sm">${fmtDate(r[COL.estEnd])}</td>
+      <td class="mono-sm" style="${stale ? 'color:var(--warn);' : ''}">${closeDateOvr ? ovrMark : ''}${fmtDate(effectiveCloseDate(r))}</td>
+      <td class="mono-sm">${estStartOvr ? ovrMark : ''}${fmtDate(effectiveEstStart(r))}</td>
+      <td class="mono-sm">${estEndOvr ? ovrMark : ''}${fmtDate(effectiveEstEnd(r))}</td>
       <td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;" title="${x(email)}">
         ${overridden ? `<span style="color:var(--warn);font-size:9px;font-family:var(--mono);">▲ </span>` : ''}${x(email)}
       </td>
@@ -552,11 +587,22 @@ function openEdit(code) {
     <div class="mrow"><label>Account</label><input class="readonly" value="${x(r[COL.account]||'')}" readonly></div>
     <div class="mrow"><label>Organisation</label><input class="readonly" value="${x(r[COL.org]||'')}" readonly></div>
     <div class="mrow"><label>Sales Stage</label><input class="readonly" value="${x(r[COL.stage]||'')}" readonly></div>
+    <div class="mrow"><label>Gross ECV</label><input class="readonly" value="${x(r[COL.grossCV]||'')}" readonly></div>
     <div class="mrow"><label>Net Contract Value</label><input class="readonly" value="${x(r[COL.netCV]||'')}" readonly></div>
     <div class="mrow"><label>Go-Get Probability</label><input class="readonly" value="${x(r[COL.prob]||'')}" readonly></div>
-    <div class="mrow"><label>Close (Decision) Date</label><input class="readonly" value="${x(r[COL.closeDate]||'')}" readonly></div>
-    <div class="mrow"><label>Est Project Start</label><input class="readonly" value="${x(r[COL.estStart]||'')}" readonly></div>
-    <div class="mrow"><label>Est Project End</label><input class="readonly" value="${x(r[COL.estEnd]||'')}" readonly></div>
+    <hr class="mdivider">
+    <div class="mrow">
+      <label>Close (Decision) Date <span style="color:var(--muted);font-size:10px;">source: ${x(r[COL.closeDate]||'—')}</span></label>
+      <input type="date" id="edit-closeDate" value="${x(r._closeDate_override || r[COL.closeDate] || '')}" onchange="setDateOverride('${x(code)}','_closeDate_override',this.value)">
+    </div>
+    <div class="mrow">
+      <label>Est Project Start <span style="color:var(--muted);font-size:10px;">source: ${x(r[COL.estStart]||'—')}</span></label>
+      <input type="date" id="edit-estStart" value="${x(r._estStart_override || r[COL.estStart] || '')}" onchange="setDateOverride('${x(code)}','_estStart_override',this.value)">
+    </div>
+    <div class="mrow">
+      <label>Est Project End <span style="color:var(--muted);font-size:10px;">source: ${x(r[COL.estEnd]||'—')}</span></label>
+      <input type="date" id="edit-estEnd" value="${x(r._estEnd_override || r[COL.estEnd] || '')}" onchange="setDateOverride('${x(code)}','_estEnd_override',this.value)">
+    </div>
     <hr class="mdivider">
     <div class="mrow"><label>Owner email (from source)</label><input class="readonly" value="${x(r[COL.email]||'')}" readonly></div>
     <div class="mrow">
@@ -583,6 +629,11 @@ function openEdit(code) {
 
 function setEmailOverride(code, val) {
   const r = find(code); if(r) r._email_override = val.trim();
+  renderTable();
+}
+
+function setDateOverride(code, field, val) {
+  const r = find(code); if(r) r[field] = val;
   renderTable();
 }
 
@@ -679,11 +730,12 @@ function doExport() {
       'Primary Project Owning Org':r[COL.org]||'',
       'Sales Stage':               r[COL.stage]||'',
       'Opportunity Type':          r[COL.type]||'',
+      'Gross ECV':                 r[COL.grossCV]||'',
       'Est. Net Contract Value':   r[COL.netCV]||'',
       'Go-Get Probability (%)':    r[COL.prob]||'',
-      'Close (Decision) Date':     r[COL.closeDate]||'',
-      'Est Project Start Date':    r[COL.estStart]||'',
-      'Est Project Completion Date': r[COL.estEnd]||'',
+      'Close (Decision) Date':     effectiveCloseDate(r),
+      'Est Project Start Date':    effectiveEstStart(r),
+      'Est Project Completion Date': effectiveEstEnd(r),
       'Owner Email':               effectiveEmail(r),
     };
     if (inclStale) obj['Stale Flag'] = isStale(r) ? 'PAST CLOSE DATE' : '';
@@ -705,7 +757,15 @@ function doExport() {
 function saveState() {
   const state = {
     savedAt: new Date().toISOString(),
-    edits: rows.map(r => ({ [COL.code]: r[COL.code], _status: r._status, _email_override: r._email_override, _notes: r._notes }))
+    edits: rows.map(r => ({
+      [COL.code]:           r[COL.code],
+      _status:              r._status,
+      _email_override:      r._email_override,
+      _notes:               r._notes,
+      _closeDate_override:  r._closeDate_override,
+      _estStart_override:   r._estStart_override,
+      _estEnd_override:     r._estEnd_override,
+    }))
   };
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(state,null,2)], {type:'application/json'}));
@@ -727,7 +787,14 @@ function handleJSON(file) {
         state.edits.forEach(ed => map[ed[COL.code]] = ed);
         rows.forEach(r => {
           const ed = map[r[COL.code]];
-          if (ed) { r._status = ed._status||''; r._email_override = ed._email_override||''; r._notes = ed._notes||''; }
+          if (ed) {
+            r._status             = ed._status             || '';
+            r._email_override     = ed._email_override     || '';
+            r._notes              = ed._notes              || '';
+            r._closeDate_override = ed._closeDate_override || '';
+            r._estStart_override  = ed._estStart_override  || '';
+            r._estEnd_override    = ed._estEnd_override    || '';
+          }
         });
       }
       refreshAll();
